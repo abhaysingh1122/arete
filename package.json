@@ -1,7 +1,7 @@
 {
-  "name": "arete",
-  "version": "0.1.0",
-  "description": "Arete — a minimal floating tasks widget for the desktop",
+  "name": "tasks-widget",
+  "version": "1.0.0",
+  "description": "Abhay's personal floating tasks widget",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
