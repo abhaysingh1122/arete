@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld('widget', {
   minimize: () => ipcRenderer.send('minimize'),
   close: () => ipcRenderer.send('close'),
   setOpacity: (v) => ipcRenderer.send('set-opacity', v),
+  resizeHeight: (h) => ipcRenderer.send('resize-height', h),
   onPinState: (cb) => ipcRenderer.on('pin-state', (e, v) => cb(v)),
 });
