@@ -84,6 +84,11 @@
   .modes button.sel { border-color: var(--accent); background: var(--surface-strong); }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   .hint { font-size: 10px; color: var(--muted); line-height: 1.5; }
+
+  /* compact / collapsed mode */
+  .compact .add, .compact .filters, .compact .foot { display: none; }
+  .compact .list { max-height: 320px; }
+  .compact .bar { padding-bottom: 6px; }
 </style>
 </head>
 <body>
@@ -92,6 +97,7 @@
       <span class="title">Tasks</span>
       <span class="count" id="count">0</span>
       <span class="spacer"></span>
+      <button id="collapse" title="Collapse to just the list">▾</button>
       <button id="pin" title="Pin on top">📌</button>
       <button id="gear" title="Settings">⚙</button>
       <button id="min" title="Minimize">—</button>
