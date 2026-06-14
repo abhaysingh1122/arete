@@ -1,0 +1,14 @@
+{
+  "name": "arete",
+  "version": "0.1.0",
+  "description": "Arete — a minimal floating tasks widget for the desktop",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "Abhay",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
