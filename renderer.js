@@ -9,6 +9,7 @@ if (!settings.mode) settings.mode = 'dark';
 if (typeof settings.opacity !== 'number') settings.opacity = 1;
 let filter = 'all';
 let newPrio = 0;
+let compact = settings.compact || false;
 
 function load(k, def) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? def : v; } catch { return def; } }
 function saveTasks() { localStorage.setItem('tw.tasks', JSON.stringify(tasks)); }
@@ -53,6 +54,7 @@ function renderTasks() {
   $('count').textContent = activeTaskCount();
   const done = tasks.filter(t => t.done).length;
   $('summary').textContent = `${done} of ${tasks.length} done`;
+  if (compact) fitCompact();
 }
 
 function editText(el, t) {
@@ -91,6 +93,27 @@ $('close').onclick = () => window.widget.close();
 $('pin').onclick = async () => { const on = await window.widget.togglePin(); $('pin').classList.toggle('on', on); };
 window.widget.onPinState(on => $('pin').classList.toggle('on', on));
 
+// ============ collapse ============
+function fitCompact() {
+  const w = document.querySelector('.widget');
+  const prev = w.style.height;
+  w.style.height = 'auto';
+  const h = Math.ceil(w.getBoundingClientRect().height) + 16;
+  w.style.height = prev;
+  window.widget.resizeHeight(Math.min(Math.max(h, 110), 640));
+}
+function applyCompact() {
+  document.body.classList.toggle('compact', compact);
+  $('collapse').textContent = compact ? '▸' : '▾';
+  if (compact) requestAnimationFrame(fitCompact);
+  else window.widget.resizeHeight(settings.expandedH || 360);
+}
+$('collapse').onclick = () => {
+  if (!compact) settings.expandedH = window.innerHeight;
+  compact = !compact; settings.compact = compact; saveSettings(); applyCompact();
+};
+window.addEventListener('resize', () => { if (!compact) { settings.expandedH = window.innerHeight; saveSettings(); } });
+
 // ============ settings ============
 $('gear').onclick = () => $('settings').classList.add('open');
 $('gearClose').onclick = () => $('settings').classList.remove('open');
@@ -117,4 +140,5 @@ function applySettings() {
 applySettings();
 updatePrioBtn();
 renderTasks();
-inputEl.focus();
+applyCompact();
+if (!compact) inputEl.focus();
