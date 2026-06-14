@@ -20,7 +20,7 @@ let settings = load('tw.settings', {});
 if (!THEME_KEYS.includes(settings.theme)) settings.theme = 'glass';
 if (!settings.accent) settings.accent = '#8b80ff';
 if (typeof settings.opacity !== 'number') settings.opacity = 1;
-let view = settings.view === 'habits' ? 'habits' : 'tasks';
+let view = ['habits', 'stats'].includes(settings.view) ? settings.view : 'tasks';
 let filter = 'all';
 let newPrio = 0;
 let compact = settings.compact || false;
@@ -194,15 +194,91 @@ function addHabit() {
 $('habitGo').onclick = addHabit;
 habitInputEl.onkeydown = (e) => { if (e.key === 'Enter') addHabit(); };
 
+// ============ STATS / contribution graph ============
+const HEAT_WEEKS = 16;
+
+function activityMap() {
+  // completions per day = tasks completed that day + habit ticks that day
+  const m = {};
+  tasks.forEach(t => { if (t.done && t.completedAt) m[t.completedAt] = (m[t.completedAt] || 0) + 1; });
+  habits.forEach(h => { Object.keys(h.history).forEach(k => { if (h.history[k]) m[k] = (m[k] || 0) + 1; }); });
+  return m;
+}
+function overallStreak(m) { let s = 0, i = m[todayKey()] ? 0 : 1; for (; ; i++) { if (m[dayKey(-i)]) s++; else break; } return s; }
+function bestStreak(m) {
+  const keys = Object.keys(m).filter(k => m[k] > 0).sort();
+  let best = 0, run = 0, prev = null;
+  keys.forEach(k => {
+    if (prev) { const diff = (new Date(k + 'T00:00') - new Date(prev + 'T00:00')) / 86400000; run = diff === 1 ? run + 1 : 1; }
+    else run = 1;
+    best = Math.max(best, run); prev = k;
+  });
+  return best;
+}
+const HEAT_OP = [0.30, 0.55, 0.80, 1]; // intensity by level 1..4
+function level(c) { return c === 0 ? 0 : c < 3 ? 1 : c < 5 ? 2 : c < 7 ? 3 : 4; }
+
+function renderStats() {
+  const m = activityMap();
+  const tk = todayKey(), mk = tk.slice(0, 7);
+  const monthDone = Object.keys(m).reduce((s, k) => s + (k.slice(0, 7) === mk ? m[k] : 0), 0);
+  const weekDone = last7().reduce((s, k) => s + (m[k] || 0), 0);
+  const total = Object.values(m).reduce((s, n) => s + n, 0);
+  const cur = overallStreak(m), best = bestStreak(m);
+  const tasksMonth = tasks.filter(t => t.done && (t.completedAt || '').slice(0, 7) === mk).length;
+  const tasksTotalMonth = tasks.filter(t => (t.completedAt || t.created && iso(new Date(t.created))).slice(0, 7) === mk || !t.done).length;
+
+  // build heatmap columns (weeks), each Sun..Sat, ending this week
+  const end = new Date(); end.setDate(end.getDate() + (6 - end.getDay())); // Saturday of this week
+  const totalDays = HEAT_WEEKS * 7;
+  const cols = [];
+  let monthsLabel = [];
+  for (let w = 0; w < HEAT_WEEKS; w++) {
+    let cells = '', firstOfCol = null;
+    for (let d = 0; d < 7; d++) {
+      const idx = (HEAT_WEEKS - 1 - w) * 7 + (6 - d);
+      const date = new Date(end); date.setDate(end.getDate() - idx);
+      if (d === 0) firstOfCol = date;
+      const key = iso(date);
+      const future = date > new Date();
+      const c = m[key] || 0, lv = level(c);
+      const bg = future ? 'background:var(--surface-strong);opacity:.25'
+        : lv === 0 ? 'background:var(--surface-strong)'
+        : `background:var(--accent);opacity:${HEAT_OP[lv - 1]}`;
+      cells += `<div class="heatCell" style="${bg}" title="${key} · ${c} completed"></div>`;
+    }
+    cols.push(`<div class="heatCol">${cells}</div>`);
+    monthsLabel.push(firstOfCol.getDate() <= 7 ? firstOfCol.toLocaleDateString(undefined, { month: 'short' }) : '');
+  }
+  const legend = [0, 1, 2, 3, 4].map(l => l === 0 ? '<div class="heatCell"></div>' : `<div class="heatCell" style="background:var(--accent);opacity:${HEAT_OP[l - 1]}"></div>`).join('');
+
+  $('stats').innerHTML = `
+    <div class="statRow">
+      <div class="statCard"><div class="n">${cur}</div><div class="l">🔥 streak</div></div>
+      <div class="statCard"><div class="n">${weekDone}</div><div class="l">this week</div></div>
+      <div class="statCard"><div class="n">${monthDone}</div><div class="l">this month</div></div>
+    </div>
+    <div class="heatHead">Activity · last ${HEAT_WEEKS} weeks</div>
+    <div class="heatMonths">${monthsLabel.map(l => `<span style="width:11px">${l}</span>`).join('')}</div>
+    <div class="heat">${cols.join('')}</div>
+    <div class="heatLegend">Less ${legend} More</div>
+    <div class="statNote">📌 ${tasksMonth} tasks done this month · 🏆 best streak ${best} days · ${total} total completions.</div>`;
+
+  if (view === 'stats') $('count').textContent = cur;
+  $('summary').textContent = `🔥 best ${best} · ${total} all-time`;
+  if (compact) fitCompact();
+}
+
 // ============ view switching ============
 function setView(v) {
   view = v; settings.view = v; saveSettings();
   $('tasksView').hidden = v !== 'tasks';
   $('habitsView').hidden = v !== 'habits';
+  $('statsView').hidden = v !== 'stats';
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
-  document.querySelector('.title').textContent = v === 'tasks' ? 'Tasks' : 'Habits';
+  document.querySelector('.title').textContent = v === 'tasks' ? 'Tasks' : v === 'habits' ? 'Habits' : 'Stats';
   $('clear').style.display = v === 'tasks' ? '' : 'none';
-  if (v === 'tasks') renderTasks(); else renderHabits();
+  if (v === 'tasks') renderTasks(); else if (v === 'habits') renderHabits(); else renderStats();
 }
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setView(b.dataset.v));
 
