@@ -1,11 +1,21 @@
 // ============ constants ============
 const ACCENTS = ['#6366f1', '#ff4d8d', '#10b981', '#f59e0b', '#22d3ee', '#ef4444', '#a855f7', '#3b82f6', '#14b8a6', '#f43f5e'];
+const THEMES = [
+  ['glass', 'Glassmorphism', '#8b80ff'],
+  ['waterdrop', 'Waterdrop', '#06b6d4'],
+  ['neomorphism', 'Neomorphism', '#6d5dfc'],
+  ['neobrutalism', 'Neo Brutalism', '#ff5470'],
+  ['neosoft', 'Neo Brutal · Soft', '#8b6cf0'],
+  ['brutalism', 'Brutalism', '#000000'],
+  ['brand', 'My Brand', '#ff4d8d'],
+];
+const THEME_KEYS = THEMES.map(t => t[0]);
 
 // ============ state ============
 let tasks = load('tw.tasks', []);
 let settings = load('tw.settings', {});
-if (!settings.accent) settings.accent = '#6366f1';
-if (!settings.mode) settings.mode = 'dark';
+if (!THEME_KEYS.includes(settings.theme)) settings.theme = 'glass';
+if (!settings.accent) settings.accent = '#8b80ff';
 if (typeof settings.opacity !== 'number') settings.opacity = 1;
 let filter = 'all';
 let newPrio = 0;
@@ -117,6 +127,13 @@ window.addEventListener('resize', () => { if (!compact) { settings.expandedH = w
 // ============ settings ============
 $('gear').onclick = () => $('settings').classList.add('open');
 $('gearClose').onclick = () => $('settings').classList.remove('open');
+const thWrap = $('themes');
+THEMES.forEach(([key, label, accent]) => {
+  const b = document.createElement('button');
+  b.dataset.t = key; b.textContent = label;
+  b.onclick = () => { settings.theme = key; settings.accent = accent; applySettings(); saveSettings(); };
+  thWrap.appendChild(b);
+});
 const swWrap = $('swatches');
 ACCENTS.forEach(c => {
   const s = document.createElement('div');
@@ -124,15 +141,12 @@ ACCENTS.forEach(c => {
   s.onclick = () => { settings.accent = c; applySettings(); saveSettings(); };
   swWrap.appendChild(s);
 });
-document.querySelectorAll('#modes button').forEach(b => {
-  b.onclick = () => { settings.mode = b.dataset.m; applySettings(); saveSettings(); };
-});
 $('opacity').oninput = (e) => { settings.opacity = parseFloat(e.target.value); window.widget.setOpacity(settings.opacity); saveSettings(); };
 function applySettings() {
-  document.body.classList.toggle('light', settings.mode === 'light');
+  document.body.className = 'theme-' + settings.theme + (compact ? ' compact' : '');
   document.body.style.setProperty('--accent', settings.accent);
+  document.querySelectorAll('.themes button').forEach(b => b.classList.toggle('sel', b.dataset.t === settings.theme));
   document.querySelectorAll('.swatch').forEach((s, i) => s.classList.toggle('sel', ACCENTS[i] === settings.accent));
-  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('sel', b.dataset.m === settings.mode));
   $('opacity').value = settings.opacity;
 }
 
