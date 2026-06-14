@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Tasks Widget — Theme Gallery</title>
+<link rel="stylesheet" href="themes.css" />
+<style>
+  html, body { height: auto; overflow: auto; background: #0d0d12; }
+  body {
+    padding: 36px;
+    background:
+      radial-gradient(900px 600px at 15% 0%, #2a1c4a, transparent 55%),
+      radial-gradient(900px 600px at 95% 25%, #06384a, transparent 55%),
+      radial-gradient(700px 700px at 60% 100%, #3a1030, transparent 55%),
+      #0b0b11;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  h1 { color: #fff; font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #aaa; font-size: 13px; margin-bottom: 26px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 30px; }
+  figure { margin: 0; }
+  .frame { width: 250px; height: 320px; }
+  figcaption { color: #eee; font-size: 13px; font-weight: 700; text-align: center; margin-top: 12px; }
+  figcaption span { display: block; color: #8a8a99; font-size: 11px; font-weight: 400; margin-top: 2px; }
+  /* let widget fill the frame */
+  .frame .widget { height: 100%; }
+</style>
+</head>
+<body>
+  <h1>🗒️ Tasks Widget — Theme Gallery</h1>
+  <div class="sub">All 7 themes, rendered with the real widget styling. Pick your favourite and tell me the name.</div>
+  <div class="grid" id="grid"></div>
+
+<script>
+  const THEMES = [
+    ['glass', 'Glassmorphism', 'frosted, vivid, blurred', '#8b80ff'],
+    ['waterdrop', 'Waterdrop', 'Apple liquid glass, glossy', '#06b6d4'],
+    ['neomorphism', 'Neomorphism', 'soft UI, puffy mono', '#6d5dfc'],
+    ['neobrutalism', 'Neo Brutalism', 'bold, hard shadows', '#ff5470'],
+    ['neosoft', 'Neo Brutal · Soft', 'pastel + soft borders', '#8b6cf0'],
+    ['brutalism', 'Brutalism', 'raw, mono, b&w', '#000000'],
+    ['brand', 'My Brand', 'cream + hot pink', '#ff4d8d'],
+  ];
+  const sample = (accent) => `
+    <div class="widget">
+      <div class="bar">
+        <span class="title">Tasks</span>
+        <span class="count">2</span>
+        <span class="spacer"></span>
+        <button>▾</button><button class="on">📌</button><button>⚙</button>
+      </div>
+      <div class="add">
+        <button class="prio">🔴</button>
+        <input placeholder="Add a task…  (Enter)" readonly />
+        <button class="go">+</button>
+      </div>
+      <div class="filters">
+        <button class="active">All</button><button>Active</button><button>Done</button>
+      </div>
+      <div class="list">
+        <div class="task"><div class="check"></div><span class="dot p3"></span><div class="txt">Ship widget update</div></div>
+        <div class="task"><div class="check"></div><span class="dot p2"></span><div class="txt">Reply to Jousef</div></div>
+        <div class="task done"><div class="check">✓</div><span class="dot p0"></span><div class="txt">Fix the avatars</div></div>
+      </div>
+      <div class="foot"><span>1 of 3 done</span><a>Clear done</a></div>
+    </div>`;
+  const grid = document.getElementById('grid');
+  THEMES.forEach(([key, label, desc, accent]) => {
+    const fig = document.createElement('figure');
+    fig.innerHTML = `<div class="frame theme-${key}" style="--accent:${accent}">${sample(accent)}</div><figcaption>${label}<span>${desc}</span></figcaption>`;
+    grid.appendChild(fig);
+  });
+</script>
+</body>
+</html>
