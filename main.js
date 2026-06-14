@@ -10,12 +10,12 @@ let win;
 function createWindow() {
   const st = loadState();
   win = new BrowserWindow({
-    width: st.width || 340,
-    height: st.height || 540,
+    width: st.width || 280,
+    height: st.height || 360,
     x: st.x,
     y: st.y,
-    minWidth: 260,
-    minHeight: 200,
+    minWidth: 220,
+    minHeight: 110,
     frame: false,
     transparent: true,
     resizable: true,
@@ -54,6 +54,10 @@ ipcMain.handle('toggle-pin', () => {
   win.setAlwaysOnTop(next, 'screen-saver');
   const s = loadState(); s.pinned = next; saveState(s);
   return next;
+});
+ipcMain.on('resize-height', (e, h) => {
+  const b = win.getBounds();
+  win.setBounds({ x: b.x, y: b.y, width: b.width, height: Math.round(h) });
 });
 ipcMain.on('minimize', () => win.minimize());
 ipcMain.on('close', () => win.close());
