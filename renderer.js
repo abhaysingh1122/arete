@@ -1,0 +1,120 @@
+// ============ constants ============
+const ACCENTS = ['#6366f1', '#ff4d8d', '#10b981', '#f59e0b', '#22d3ee', '#ef4444', '#a855f7', '#3b82f6', '#14b8a6', '#f43f5e'];
+
+// ============ state ============
+let tasks = load('tw.tasks', []);
+let settings = load('tw.settings', {});
+if (!settings.accent) settings.accent = '#6366f1';
+if (!settings.mode) settings.mode = 'dark';
+if (typeof settings.opacity !== 'number') settings.opacity = 1;
+let filter = 'all';
+let newPrio = 0;
+
+function load(k, def) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? def : v; } catch { return def; } }
+function saveTasks() { localStorage.setItem('tw.tasks', JSON.stringify(tasks)); }
+function saveSettings() { localStorage.setItem('tw.settings', JSON.stringify(settings)); }
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const $ = (id) => document.getElementById(id);
+function esc(s) { return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// ============ tasks ============
+const listEl = $('list'), inputEl = $('input');
+
+function activeTaskCount() { return tasks.filter(t => !t.done).length; }
+
+function renderTasks() {
+  let view = tasks.filter(t => {
+    if (filter === 'active') return !t.done;
+    if (filter === 'done') return t.done;
+    return true;
+  });
+  view = view.slice().sort((a, b) => (a.done - b.done) || (b.prio - a.prio) || (a.created - b.created));
+
+  if (!view.length) {
+    listEl.innerHTML = `<div class="empty">${filter === 'done' ? 'Nothing completed yet.' : filter === 'active' ? 'No active tasks — nice. 🎉' : 'No tasks yet.<br>Add your first one above.'}</div>`;
+  } else {
+    listEl.innerHTML = '';
+    view.forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'task' + (t.done ? ' done' : '');
+      row.innerHTML = `
+        <div class="check">${t.done ? '✓' : ''}</div>
+        <span class="dot p${t.prio}" title="Click to set priority"></span>
+        <div class="txt">${esc(t.text)}</div>
+        <button class="del" title="Delete">✕</button>`;
+      row.querySelector('.check').onclick = () => { t.done = !t.done; saveTasks(); renderTasks(); };
+      row.querySelector('.dot').onclick = () => { t.prio = (t.prio + 1) % 4; saveTasks(); renderTasks(); };
+      row.querySelector('.del').onclick = () => { tasks = tasks.filter(x => x.id !== t.id); saveTasks(); renderTasks(); };
+      const txt = row.querySelector('.txt');
+      txt.ondblclick = () => editText(txt, t);
+      listEl.appendChild(row);
+    });
+  }
+  $('count').textContent = activeTaskCount();
+  const done = tasks.filter(t => t.done).length;
+  $('summary').textContent = `${done} of ${tasks.length} done`;
+}
+
+function editText(el, t) {
+  el.contentEditable = 'true'; el.focus();
+  const r = document.createRange(); r.selectNodeContents(el);
+  const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  const finish = () => {
+    el.contentEditable = 'false';
+    const v = el.textContent.trim();
+    if (v) t.text = v; else el.textContent = t.text;
+    saveTasks(); renderTasks();
+  };
+  el.onblur = finish;
+  el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } if (e.key === 'Escape') { el.textContent = t.text; el.blur(); } };
+}
+
+function addTask() {
+  const v = inputEl.value.trim(); if (!v) return;
+  tasks.push({ id: uid(), text: v, done: false, prio: newPrio, created: Date.now() });
+  inputEl.value = ''; newPrio = 0; updatePrioBtn();
+  saveTasks(); renderTasks(); inputEl.focus();
+}
+const PRIO_DOT = ['⚪', '🔵', '🟠', '🔴'];
+function updatePrioBtn() { $('prio').textContent = PRIO_DOT[newPrio]; }
+$('go').onclick = addTask;
+inputEl.onkeydown = (e) => { if (e.key === 'Enter') addTask(); };
+$('prio').onclick = () => { newPrio = (newPrio + 1) % 4; updatePrioBtn(); };
+$('clear').onclick = () => { tasks = tasks.filter(t => !t.done); saveTasks(); renderTasks(); };
+document.querySelectorAll('#filters button').forEach(b => {
+  b.onclick = () => { document.querySelectorAll('#filters button').forEach(x => x.classList.remove('active')); b.classList.add('active'); filter = b.dataset.f; renderTasks(); };
+});
+
+// ============ window controls ============
+$('min').onclick = () => window.widget.minimize();
+$('close').onclick = () => window.widget.close();
+$('pin').onclick = async () => { const on = await window.widget.togglePin(); $('pin').classList.toggle('on', on); };
+window.widget.onPinState(on => $('pin').classList.toggle('on', on));
+
+// ============ settings ============
+$('gear').onclick = () => $('settings').classList.add('open');
+$('gearClose').onclick = () => $('settings').classList.remove('open');
+const swWrap = $('swatches');
+ACCENTS.forEach(c => {
+  const s = document.createElement('div');
+  s.className = 'swatch'; s.style.background = c;
+  s.onclick = () => { settings.accent = c; applySettings(); saveSettings(); };
+  swWrap.appendChild(s);
+});
+document.querySelectorAll('#modes button').forEach(b => {
+  b.onclick = () => { settings.mode = b.dataset.m; applySettings(); saveSettings(); };
+});
+$('opacity').oninput = (e) => { settings.opacity = parseFloat(e.target.value); window.widget.setOpacity(settings.opacity); saveSettings(); };
+function applySettings() {
+  document.body.classList.toggle('light', settings.mode === 'light');
+  document.body.style.setProperty('--accent', settings.accent);
+  document.querySelectorAll('.swatch').forEach((s, i) => s.classList.toggle('sel', ACCENTS[i] === settings.accent));
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('sel', b.dataset.m === settings.mode));
+  $('opacity').value = settings.opacity;
+}
+
+// ============ init ============
+applySettings();
+updatePrioBtn();
+renderTasks();
+inputEl.focus();
