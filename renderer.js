@@ -1,7 +1,8 @@
 // ============ constants ============
 const ACCENTS = ['#6366f1', '#ff4d8d', '#10b981', '#f59e0b', '#22d3ee', '#ef4444', '#a855f7', '#3b82f6', '#14b8a6', '#f43f5e'];
-const TAG = ['⚑', 'LOW', 'MED', 'HIGH'];          // priority labels 0..3
+const TAG = ['⚑', 'LOW', 'MED', 'HIGH'];
 const PRIO_COLOR = ['', '#3b82f6', '#f59e0b', '#ef4444'];
+const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];          // index 0 = Sunday
 const THEMES = [
   ['glass', 'Glassmorphism', '#8b80ff'],
   ['waterdrop', 'Waterdrop', '#06b6d4'],
@@ -16,56 +17,126 @@ const THEME_KEYS = THEMES.map(t => t[0]);
 // ============ state ============
 let tasks = load('tw.tasks', []);
 let habits = load('tw.habits', []);
+let taskLog = load('tw.taskLog', {});     // date -> count of task completions (persists for the graph)
 let settings = load('tw.settings', {});
+let meta = load('tw.meta', {});
 if (!THEME_KEYS.includes(settings.theme)) settings.theme = 'glass';
 if (!settings.accent) settings.accent = '#8b80ff';
 if (typeof settings.opacity !== 'number') settings.opacity = 1;
+if (!/^\d\d:\d\d$/.test(settings.resetTime || '')) settings.resetTime = '00:00';
+// migrate habits to scheduled / count-based model
+habits.forEach(h => {
+  if (!Array.isArray(h.days)) h.days = [0, 1, 2, 3, 4, 5, 6];
+  if (!h.timesPerDay) h.timesPerDay = 1;
+  if (!h.history) h.history = {};
+  for (const k in h.history) if (h.history[k] === true) h.history[k] = 1;
+});
 let view = ['habits', 'stats'].includes(settings.view) ? settings.view : 'tasks';
 let filter = 'all';
 let newPrio = 0;
 let compact = settings.compact || false;
+let editingHabit = null;
 
 function load(k, def) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? def : v; } catch { return def; } }
 function saveTasks() { localStorage.setItem('tw.tasks', JSON.stringify(tasks)); }
 function saveHabits() { localStorage.setItem('tw.habits', JSON.stringify(habits)); }
+function saveLog() { localStorage.setItem('tw.taskLog', JSON.stringify(taskLog)); }
 function saveSettings() { localStorage.setItem('tw.settings', JSON.stringify(settings)); }
+function saveMeta() { localStorage.setItem('tw.meta', JSON.stringify(meta)); }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const $ = (id) => document.getElementById(id);
 function esc(s) { return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // ============ dates ============
 function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-function todayKey() { return iso(new Date()); }
 function dayKey(off) { const d = new Date(); d.setDate(d.getDate() + off); return iso(d); }
-function last7() { return [6, 5, 4, 3, 2, 1, 0].map(n => dayKey(-n)); }
+function addDays(key, n) { const d = new Date(key + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d); }
+function dowOf(key) { return new Date(key + 'T12:00:00').getDay(); }
+// the current "logical day" — rolls over at the configured reset time
+function today() {
+  const [rh, rm] = settings.resetTime.split(':').map(Number);
+  const now = new Date();
+  if (now.getHours() * 60 + now.getMinutes() < rh * 60 + rm) return dayKey(-1);
+  return dayKey(0);
+}
+function last7() { const t = today(); return [6, 5, 4, 3, 2, 1, 0].map(n => addDays(t, -n)); }
 function dueInfo(due) {
   if (!due) return { cls: 'none', label: '📅' };
-  const t = todayKey();
+  const t = today();
   if (due < t) return { cls: 'over', label: 'Overdue' };
   if (due === t) return { cls: 'soon', label: 'Today' };
-  if (due === dayKey(1)) return { cls: 'soon', label: 'Tomorrow' };
-  const d = new Date(due + 'T00:00:00');
-  return { cls: '', label: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) };
+  if (due === addDays(t, 1)) return { cls: 'soon', label: 'Tomorrow' };
+  return { cls: '', label: new Date(due + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) };
+}
+
+// ============ daily reset ============
+function checkReset() {
+  const cur = today();
+  if (meta.lastResetDay === cur) return;
+  if (meta.lastResetDay) {            // not the very first launch → roll the day
+    tasks = tasks.filter(t => !t.done);   // clear completed; unfinished carry over
+    saveTasks();
+  }
+  meta.lastResetDay = cur;
+  saveMeta();
+  renderCurrent();
+}
+
+// ============ habits helpers ============
+function isScheduledToday(h) { return h.days.includes(dowOf(today())); }
+function habitDone(h, key) { return (h.history[key] || 0) >= h.timesPerDay; }
+function tickHabit(h) {
+  const d = today(), c = h.history[d] || 0;
+  if (h.timesPerDay <= 1) { if (c) delete h.history[d]; else h.history[d] = 1; }
+  else { const n = c >= h.timesPerDay ? 0 : c + 1; if (n === 0) delete h.history[d]; else h.history[d] = n; }
+  saveHabits(); renderCurrent();
+}
+function streakOf(h) {
+  let s = 0; const cur = today();
+  for (let i = 0; i < 400; i++) {
+    const key = addDays(cur, -i);
+    if (!h.days.includes(dowOf(key))) continue;     // not scheduled → doesn't count or break
+    if (habitDone(h, key)) s++;
+    else if (key === cur) continue;                 // today not done yet → grace, keep looking back
+    else break;
+  }
+  return s;
 }
 
 // ============ TASKS ============
 const listEl = $('list'), inputEl = $('input');
 
-function activeTaskCount() { return tasks.filter(t => !t.done).length; }
-
 function renderTasks() {
+  listEl.innerHTML = '';
+  const cur = today();
+  // 1) today's scheduled habits, surfaced as daily task rows
+  const hToday = habits.filter(isScheduledToday)
+    .slice().sort((a, b) => (habitDone(a, cur) - habitDone(b, cur)));
+  hToday.forEach(h => {
+    const done = habitDone(h, cur), c = h.history[cur] || 0;
+    const prog = h.timesPerDay > 1 ? `<span class="hcount">${c}/${h.timesPerDay}</span>` : '';
+    const row = document.createElement('div');
+    row.className = 'task habitTask' + (done ? ' done' : '');
+    row.innerHTML = `
+      <div class="check">${done ? '✓' : ''}</div>
+      <div class="tag htag" title="Daily habit">🔁</div>
+      <div class="txt">${esc(h.name)}</div>
+      ${prog}`;
+    row.querySelector('.check').onclick = () => tickHabit(h);
+    row.querySelector('.txt').onclick = () => { setView('habits'); openHabit(h); };
+    listEl.appendChild(row);
+  });
+  // 2) one-off tasks
   let view2 = tasks.filter(t => {
     if (filter === 'active') return !t.done;
     if (filter === 'done') return t.done;
     if (filter === 'high') return t.prio === 3;
     return true;
-  });
-  view2 = view2.slice().sort((a, b) => (a.done - b.done) || (b.prio - a.prio) || ((a.due || '9') > (b.due || '9') ? 1 : -1) || (a.created - b.created));
+  }).slice().sort((a, b) => (a.done - b.done) || (b.prio - a.prio) || ((a.due || '9') > (b.due || '9') ? 1 : -1) || (a.created - b.created));
 
-  if (!view2.length) {
-    listEl.innerHTML = `<div class="empty">${filter === 'done' ? 'Nothing completed yet.' : filter === 'high' ? 'No high-priority tasks.' : filter === 'active' ? 'No active tasks — nice. 🎉' : 'No tasks yet.<br>Add your first one above.'}</div>`;
+  if (!view2.length && !hToday.length) {
+    listEl.innerHTML = `<div class="empty">${filter === 'done' ? 'Nothing completed yet.' : filter === 'high' ? 'No high-priority tasks.' : filter === 'active' ? 'All clear — nice. 🎉' : 'No tasks yet.<br>Add your first one above.'}</div>`;
   } else {
-    listEl.innerHTML = '';
     view2.forEach(t => {
       const di = dueInfo(t.due);
       const row = document.createElement('div');
@@ -76,29 +147,33 @@ function renderTasks() {
         <div class="txt">${esc(t.text)}</div>
         <div class="due ${di.cls}" title="Set due date (right-click to clear)">${di.label}</div>
         <button class="del" title="Delete">✕</button>`;
-      row.querySelector('.check').onclick = () => { t.done = !t.done; t.completedAt = t.done ? todayKey() : null; saveTasks(); renderTasks(); };
+      row.querySelector('.check').onclick = () => toggleTask(t);
       row.querySelector('.tag').onclick = () => { t.prio = (t.prio + 1) % 4; saveTasks(); renderTasks(); };
       const due = row.querySelector('.due');
       due.onclick = () => openDue(t);
       due.oncontextmenu = (e) => { e.preventDefault(); t.due = null; saveTasks(); renderTasks(); };
       row.querySelector('.del').onclick = () => { tasks = tasks.filter(x => x.id !== t.id); saveTasks(); renderTasks(); };
-      const txt = row.querySelector('.txt');
-      txt.ondblclick = () => editText(txt, t, saveTasks, renderTasks);
+      row.querySelector('.txt').ondblclick = function () { editText(this, t, 'text', saveTasks, renderTasks); };
       listEl.appendChild(row);
     });
   }
-  // header + footer
-  if (view === 'tasks') $('count').textContent = activeTaskCount();
-  const done = tasks.filter(t => t.done).length;
+  if (view === 'tasks') $('count').textContent = tasks.filter(t => !t.done).length + hToday.filter(h => !habitDone(h, cur)).length;
   const wk = new Set(last7());
   const weekDone = tasks.filter(t => t.done && wk.has(t.completedAt)).length;
-  $('summary').textContent = `${done} of ${tasks.length} done · ${weekDone} this week`;
-  if (compact) fitCompact();
+  $('summary').textContent = `${tasks.filter(t => t.done).length} of ${tasks.length} done · ${weekDone} this week`;
+}
+
+function toggleTask(t) {
+  t.done = !t.done;
+  const d = today();
+  if (t.done) { t.completedAt = d; taskLog[d] = (taskLog[d] || 0) + 1; }
+  else { t.completedAt = null; if (taskLog[d]) taskLog[d] = Math.max(0, taskLog[d] - 1); }
+  saveTasks(); saveLog(); renderTasks();
 }
 
 function openDue(t) {
   const inp = document.createElement('input');
-  inp.type = 'date'; inp.value = t.due || todayKey();
+  inp.type = 'date'; inp.value = t.due || today();
   inp.style.cssText = 'position:fixed;left:-9999px;';
   document.body.appendChild(inp);
   inp.onchange = () => { t.due = inp.value || null; saveTasks(); renderTasks(); inp.remove(); };
@@ -106,19 +181,13 @@ function openDue(t) {
   if (inp.showPicker) inp.showPicker(); else inp.focus();
 }
 
-function editText(el, obj, saveFn, renderFn) {
+function editText(el, obj, key, saveFn, renderFn) {
   el.contentEditable = 'true'; el.focus();
   const r = document.createRange(); r.selectNodeContents(el);
   const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-  const orig = obj.text != null ? 'text' : 'name';
-  const finish = () => {
-    el.contentEditable = 'false';
-    const v = el.textContent.trim();
-    if (v) obj[orig] = v; else el.textContent = obj[orig]; // empty → revert
-    saveFn(); renderFn();
-  };
+  const finish = () => { el.contentEditable = 'false'; const v = el.textContent.trim(); if (v) obj[key] = v; else el.textContent = obj[key]; saveFn(); renderFn(); };
   el.onblur = finish;
-  el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } if (e.key === 'Escape') { el.textContent = obj.text || obj.name; el.blur(); } };
+  el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } if (e.key === 'Escape') { el.textContent = obj[key]; el.blur(); } };
 }
 
 function addTask() {
@@ -146,130 +215,127 @@ document.querySelectorAll('#filters button').forEach(b => {
 // ============ HABITS ============
 const habitListEl = $('habitList'), habitInputEl = $('habitInput');
 
-function streakOf(h) {
-  let s = 0, i = h.history[todayKey()] ? 0 : 1;
-  for (; ; i++) { if (h.history[dayKey(-i)]) s++; else break; }
-  return s;
-}
-function doneTodayCount() { return habits.filter(h => h.history[todayKey()]).length; }
-
 function renderHabits() {
+  const cur = today();
   if (!habits.length) {
-    habitListEl.innerHTML = `<div class="empty">No habits yet.<br>Add a daily habit to start a 🔥 streak.</div>`;
+    habitListEl.innerHTML = `<div class="empty">No habits yet.<br>Add one to build a 🔥 streak.</div>`;
   } else {
     habitListEl.innerHTML = '';
-    const days = last7(), tk = todayKey();
+    const days = last7();
     habits.forEach(h => {
-      const st = streakOf(h), doneToday = !!h.history[tk];
-      const cells = days.map(k => `<div class="hcell ${h.history[k] ? 'on' : ''} ${k === tk ? 'now' : ''}" data-d="${k}" title="${k}"></div>`).join('');
+      const st = streakOf(h), done = habitDone(h, cur), sched = isScheduledToday(h);
+      const cells = days.map(k => {
+        const on = habitDone(h, k), s = h.days.includes(dowOf(k));
+        return `<div class="hcell ${on ? 'on' : ''} ${k === cur ? 'now' : ''} ${s ? '' : 'off'}" title="${k}${s ? '' : ' (not scheduled)'}"></div>`;
+      }).join('');
+      const sub = (h.days.length === 7 ? 'Every day' : h.days.map(d => DOW[d]).join(' ')) + (h.timesPerDay > 1 ? ` · ${h.history[cur] || 0}/${h.timesPerDay}` : '');
       const row = document.createElement('div');
-      row.className = 'habit' + (doneToday ? ' today' : '');
+      row.className = 'habit' + (done ? ' today' : '');
       row.innerHTML = `
-        <button class="hcheck">${doneToday ? '✓' : ''}</button>
-        <div class="hmain"><div class="hname">${esc(h.name)}</div><div class="hgrid">${cells}</div></div>
+        <button class="hcheck" ${sched ? '' : 'disabled style="opacity:.35"'}>${done ? '✓' : ''}</button>
+        <div class="hmain"><div class="hname">${esc(h.name)}</div><div class="hsub">${sub}</div><div class="hgrid">${cells}</div></div>
         <div class="hstreak">🔥 ${st}</div>
-        <button class="del" title="Delete">✕</button>`;
-      row.querySelector('.hcheck').onclick = () => { toggleDay(h, tk); };
-      row.querySelectorAll('.hcell').forEach(c => c.onclick = () => toggleDay(h, c.dataset.d));
-      row.querySelector('.del').onclick = () => { habits = habits.filter(x => x.id !== h.id); saveHabits(); renderHabits(); };
-      const name = row.querySelector('.hname');
-      name.ondblclick = () => editText(name, h, saveHabits, renderHabits);
+        <button class="hedit" title="Edit">✎</button>`;
+      if (sched) row.querySelector('.hcheck').onclick = () => tickHabit(h);
+      row.querySelector('.hname').onclick = () => openHabit(h);
+      row.querySelector('.hedit').onclick = () => openHabit(h);
       habitListEl.appendChild(row);
     });
   }
-  if (view === 'habits') $('count').textContent = doneTodayCount();
+  if (view === 'habits') $('count').textContent = habits.filter(isScheduledToday).filter(h => habitDone(h, cur)).length;
+  const sched = habits.filter(isScheduledToday);
   const best = habits.reduce((m, h) => Math.max(m, streakOf(h)), 0);
-  $('summary').textContent = `${doneTodayCount()} of ${habits.length} today · 🔥 best ${best}`;
-  if (compact) fitCompact();
-}
-function toggleDay(h, key) {
-  if (h.history[key]) delete h.history[key]; else h.history[key] = true;
-  saveHabits(); renderHabits();
+  $('summary').textContent = `${sched.filter(h => habitDone(h, cur)).length} of ${sched.length} today · 🔥 best ${best}`;
 }
 function addHabit() {
   const v = habitInputEl.value.trim(); if (!v) return;
-  habits.push({ id: uid(), name: v, created: Date.now(), history: {} });
-  habitInputEl.value = ''; saveHabits(); renderHabits();
+  const h = { id: uid(), name: v, created: Date.now(), days: [0, 1, 2, 3, 4, 5, 6], timesPerDay: 1, history: {} };
+  habits.push(h); habitInputEl.value = ''; saveHabits(); renderHabits();
 }
 $('habitGo').onclick = addHabit;
 habitInputEl.onkeydown = (e) => { if (e.key === 'Enter') addHabit(); };
 
-// ============ STATS / contribution graph ============
-const HEAT_WEEKS = 16;
+// ============ habit editor ============
+function openHabit(h) {
+  editingHabit = h;
+  $('heName').value = h.name;
+  $('heTimes').textContent = h.timesPerDay;
+  const wrap = $('heDays'); wrap.innerHTML = '';
+  DOW.forEach((d, i) => {
+    const b = document.createElement('button');
+    b.className = 'dayChip' + (h.days.includes(i) ? ' on' : '');
+    b.textContent = d;
+    b.onclick = () => {
+      if (h.days.includes(i)) { if (h.days.length > 1) h.days = h.days.filter(x => x !== i); }
+      else h.days.push(i);
+      h.days.sort(); b.classList.toggle('on', h.days.includes(i)); saveHabits();
+    };
+    wrap.appendChild(b);
+  });
+  $('habitEditor').classList.add('open');
+}
+$('heClose').onclick = () => { saveHabits(); $('habitEditor').classList.remove('open'); renderCurrent(); };
+$('heName').oninput = (e) => { if (editingHabit) { editingHabit.name = e.target.value.trim() || editingHabit.name; saveHabits(); } };
+$('heMinus').onclick = () => { if (editingHabit && editingHabit.timesPerDay > 1) { editingHabit.timesPerDay--; $('heTimes').textContent = editingHabit.timesPerDay; saveHabits(); } };
+$('hePlus').onclick = () => { if (editingHabit && editingHabit.timesPerDay < 20) { editingHabit.timesPerDay++; $('heTimes').textContent = editingHabit.timesPerDay; saveHabits(); } };
+$('heDelete').onclick = () => { if (editingHabit) { habits = habits.filter(x => x.id !== editingHabit.id); saveHabits(); editingHabit = null; $('habitEditor').classList.remove('open'); renderCurrent(); } };
 
+// ============ STATS ============
+const HEAT_WEEKS = 16;
 function activityMap() {
-  // completions per day = tasks completed that day + habit ticks that day
   const m = {};
-  tasks.forEach(t => { if (t.done && t.completedAt) m[t.completedAt] = (m[t.completedAt] || 0) + 1; });
-  habits.forEach(h => { Object.keys(h.history).forEach(k => { if (h.history[k]) m[k] = (m[k] || 0) + 1; }); });
+  for (const k in taskLog) m[k] = (m[k] || 0) + taskLog[k];
+  habits.forEach(h => { for (const k in h.history) m[k] = (m[k] || 0) + (h.history[k] || 0); });
   return m;
 }
-function overallStreak(m) { let s = 0, i = m[todayKey()] ? 0 : 1; for (; ; i++) { if (m[dayKey(-i)]) s++; else break; } return s; }
+function overallStreak(m) { let s = 0, i = m[today()] ? 0 : 1; for (; ; i++) { if (m[addDays(today(), -i)]) s++; else break; } return s; }
 function bestStreak(m) {
-  const keys = Object.keys(m).filter(k => m[k] > 0).sort();
-  let best = 0, run = 0, prev = null;
-  keys.forEach(k => {
-    if (prev) { const diff = (new Date(k + 'T00:00') - new Date(prev + 'T00:00')) / 86400000; run = diff === 1 ? run + 1 : 1; }
-    else run = 1;
-    best = Math.max(best, run); prev = k;
-  });
+  const keys = Object.keys(m).filter(k => m[k] > 0).sort(); let best = 0, run = 0, prev = null;
+  keys.forEach(k => { if (prev) { const diff = (new Date(k + 'T00:00') - new Date(prev + 'T00:00')) / 864e5; run = diff === 1 ? run + 1 : 1; } else run = 1; best = Math.max(best, run); prev = k; });
   return best;
 }
-const HEAT_OP = [0.30, 0.55, 0.80, 1]; // intensity by level 1..4
+const HEAT_OP = [0.30, 0.55, 0.80, 1];
 function level(c) { return c === 0 ? 0 : c < 3 ? 1 : c < 5 ? 2 : c < 7 ? 3 : 4; }
-
 function renderStats() {
-  const m = activityMap();
-  const tk = todayKey(), mk = tk.slice(0, 7);
+  const m = activityMap(), cur = today(), mk = cur.slice(0, 7);
   const monthDone = Object.keys(m).reduce((s, k) => s + (k.slice(0, 7) === mk ? m[k] : 0), 0);
   const weekDone = last7().reduce((s, k) => s + (m[k] || 0), 0);
   const total = Object.values(m).reduce((s, n) => s + n, 0);
-  const cur = overallStreak(m), best = bestStreak(m);
-  const tasksMonth = tasks.filter(t => t.done && (t.completedAt || '').slice(0, 7) === mk).length;
-  const tasksTotalMonth = tasks.filter(t => (t.completedAt || t.created && iso(new Date(t.created))).slice(0, 7) === mk || !t.done).length;
-
-  // build heatmap columns (weeks), each Sun..Sat, ending this week
-  const end = new Date(); end.setDate(end.getDate() + (6 - end.getDay())); // Saturday of this week
-  const totalDays = HEAT_WEEKS * 7;
-  const cols = [];
-  let monthsLabel = [];
+  const curStreak = overallStreak(m), best = bestStreak(m);
+  const tasksMonth = Object.keys(taskLog).reduce((s, k) => s + (k.slice(0, 7) === mk ? taskLog[k] : 0), 0);
+  const end = new Date(cur + 'T12:00:00'); end.setDate(end.getDate() + (6 - end.getDay()));
+  const cols = [], months = [];
   for (let w = 0; w < HEAT_WEEKS; w++) {
-    let cells = '', firstOfCol = null;
+    let cells = '', first = null;
     for (let d = 0; d < 7; d++) {
       const idx = (HEAT_WEEKS - 1 - w) * 7 + (6 - d);
       const date = new Date(end); date.setDate(end.getDate() - idx);
-      if (d === 0) firstOfCol = date;
-      const key = iso(date);
-      const future = date > new Date();
-      const c = m[key] || 0, lv = level(c);
-      const bg = future ? 'background:var(--surface-strong);opacity:.25'
-        : lv === 0 ? 'background:var(--surface-strong)'
-        : `background:var(--accent);opacity:${HEAT_OP[lv - 1]}`;
+      if (d === 0) first = date;
+      const key = iso(date), future = date > new Date(cur + 'T23:59:59'), c = m[key] || 0, lv = level(c);
+      const bg = future ? 'background:var(--surface-strong);opacity:.25' : lv === 0 ? 'background:var(--surface-strong)' : `background:var(--accent);opacity:${HEAT_OP[lv - 1]}`;
       cells += `<div class="heatCell" style="${bg}" title="${key} · ${c} completed"></div>`;
     }
     cols.push(`<div class="heatCol">${cells}</div>`);
-    monthsLabel.push(firstOfCol.getDate() <= 7 ? firstOfCol.toLocaleDateString(undefined, { month: 'short' }) : '');
+    months.push(first.getDate() <= 7 ? first.toLocaleDateString(undefined, { month: 'short' }) : '');
   }
   const legend = [0, 1, 2, 3, 4].map(l => l === 0 ? '<div class="heatCell"></div>' : `<div class="heatCell" style="background:var(--accent);opacity:${HEAT_OP[l - 1]}"></div>`).join('');
-
   $('stats').innerHTML = `
     <div class="statRow">
-      <div class="statCard"><div class="n">${cur}</div><div class="l">🔥 streak</div></div>
+      <div class="statCard"><div class="n">${curStreak}</div><div class="l">🔥 streak</div></div>
       <div class="statCard"><div class="n">${weekDone}</div><div class="l">this week</div></div>
       <div class="statCard"><div class="n">${monthDone}</div><div class="l">this month</div></div>
     </div>
     <div class="heatHead">Activity · last ${HEAT_WEEKS} weeks</div>
-    <div class="heatMonths">${monthsLabel.map(l => `<span style="width:11px">${l}</span>`).join('')}</div>
+    <div class="heatMonths">${months.map(l => `<span style="width:11px">${l}</span>`).join('')}</div>
     <div class="heat">${cols.join('')}</div>
     <div class="heatLegend">Less ${legend} More</div>
     <div class="statNote">📌 ${tasksMonth} tasks done this month · 🏆 best streak ${best} days · ${total} total completions.</div>`;
-
-  if (view === 'stats') $('count').textContent = cur;
+  if (view === 'stats') $('count').textContent = curStreak;
   $('summary').textContent = `🔥 best ${best} · ${total} all-time`;
-  if (compact) fitCompact();
 }
 
 // ============ view switching ============
+function renderCurrent() { if (view === 'tasks') renderTasks(); else if (view === 'habits') renderHabits(); else renderStats(); }
 function setView(v) {
   view = v; settings.view = v; saveSettings();
   $('tasksView').hidden = v !== 'tasks';
@@ -278,7 +344,7 @@ function setView(v) {
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
   document.querySelector('.title').textContent = v === 'tasks' ? 'Tasks' : v === 'habits' ? 'Habits' : 'Stats';
   $('clear').style.display = v === 'tasks' ? '' : 'none';
-  if (v === 'tasks') renderTasks(); else if (v === 'habits') renderHabits(); else renderStats();
+  renderCurrent();
 }
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setView(b.dataset.v));
 
@@ -290,12 +356,11 @@ window.widget.onPinState(on => $('pin').classList.toggle('on', on));
 
 // ============ collapse ============
 function fitCompact() {
-  const w = document.querySelector('.widget');
-  const prev = w.style.height;
+  const w = document.querySelector('.widget'); const prev = w.style.height;
   w.style.height = 'auto';
   const h = Math.ceil(w.getBoundingClientRect().height) + 16;
   w.style.height = prev;
-  window.widget.resizeHeight(Math.min(Math.max(h, 110), 640));
+  window.widget.resizeHeight(Math.min(Math.max(h, 110), 700));
 }
 function applyCompact() {
   document.body.classList.toggle('compact', compact);
@@ -327,18 +392,22 @@ ACCENTS.forEach(c => {
   swWrap.appendChild(s);
 });
 $('opacity').oninput = (e) => { settings.opacity = parseFloat(e.target.value); window.widget.setOpacity(settings.opacity); saveSettings(); };
+$('resetTime').onchange = (e) => { if (/^\d\d:\d\d$/.test(e.target.value)) { settings.resetTime = e.target.value; saveSettings(); checkReset(); renderCurrent(); } };
 function applySettings() {
   document.body.className = 'theme-' + settings.theme + (compact ? ' compact' : '');
   document.body.style.setProperty('--accent', settings.accent);
   document.querySelectorAll('.themes button').forEach(b => b.classList.toggle('sel', b.dataset.t === settings.theme));
   document.querySelectorAll('.swatch').forEach((s, i) => s.classList.toggle('sel', ACCENTS[i] === settings.accent));
   $('opacity').value = settings.opacity;
+  $('resetTime').value = settings.resetTime;
   updatePrioBtn();
 }
 
 // ============ init ============
 applySettings();
-updatePrioBtn();
+checkReset();
 setView(view);
 applyCompact();
 if (!compact && view === 'tasks') inputEl.focus();
+// roll the day over while the app stays open
+setInterval(checkReset, 30000);
