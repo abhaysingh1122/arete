@@ -74,7 +74,30 @@
         <label>Opacity</label>
         <input type="range" id="opacity" min="0.45" max="1" step="0.01" value="1" />
       </div>
+      <div class="srow">
+        <label>Daily reset time</label>
+        <input type="time" id="resetTime" class="field" value="00:00" />
+        <span class="hint">At this time each day, completed tasks clear and habits reset for the new day. Unfinished tasks carry over.</span>
+      </div>
       <div class="hint">Drag the top bar to move • drag edges to resize • 📌 pins above all windows • ▾ collapses to just the list • click a task's tag to set priority • everything saves automatically.</div>
+    </div>
+
+    <!-- HABIT EDITOR -->
+    <div class="settings" id="habitEditor">
+      <h3><span id="heTitle">Edit habit</span> <button id="heClose">✕</button></h3>
+      <div class="srow">
+        <label>Name</label>
+        <input type="text" id="heName" class="field" maxlength="120" />
+      </div>
+      <div class="srow">
+        <label>Repeat on</label>
+        <div class="dayChips" id="heDays"></div>
+      </div>
+      <div class="srow">
+        <label>Times per day</label>
+        <div class="stepper"><button id="heMinus">−</button><span id="heTimes">1</span><button id="hePlus">+</button></div>
+      </div>
+      <div class="srow"><button id="heDelete" class="dangerBtn">Delete habit</button></div>
     </div>
   </div>
   <script src="renderer.js"></script>
