@@ -159,9 +159,34 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .heatLegend .heatCell { width: 9px; height: 9px; }
 .statNote { font-size: 10px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
 
-/* compact mode */
+/* habit surfaced as a daily task */
+.tag.htag { background: transparent; opacity: .9; font-size: 13px; padding: 2px 2px; cursor: default; }
+.hcount { font-size: 10px; font-weight: 800; color: var(--accent); margin-top: 3px; flex-shrink: 0; }
+
+/* habit row extras */
+.hsub { font-size: 9.5px; color: var(--muted); margin: 2px 0 5px; letter-spacing: .3px; }
+.hcell.off { opacity: .3; }
+.hedit { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 2px; flex-shrink: 0; -webkit-app-region: no-drag; }
+.hedit:hover { color: var(--accent); }
+
+/* settings fields */
+.field { border: none; outline: none; border-radius: var(--radius-sm); background: var(--surface); color: var(--text); padding: 7px 10px; font-size: 12px; font-family: var(--font); box-shadow: var(--input-extra); }
+.field::-webkit-calendar-picker-indicator { filter: invert(.5); }
+
+/* day-of-week chips */
+.dayChips { display: flex; gap: 5px; }
+.dayChip { width: 26px; height: 26px; border: none; border-radius: 7px; cursor: pointer; background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 800; -webkit-app-region: no-drag; box-shadow: var(--btn-shadow); }
+.dayChip.on { background: var(--accent); color: var(--accent-text); }
+
+/* stepper */
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper button { width: 28px; height: 28px; border: none; border-radius: var(--radius-sm); cursor: pointer; background: var(--surface); color: var(--text); font-size: 16px; font-weight: 800; box-shadow: var(--btn-shadow); -webkit-app-region: no-drag; }
+.stepper span { font-size: 15px; font-weight: 800; min-width: 22px; text-align: center; }
+
+.dangerBtn { border: none; border-radius: var(--radius-sm); cursor: pointer; background: #ef4444; color: #fff; font-size: 12px; font-weight: 700; padding: 9px; -webkit-app-region: no-drag; box-shadow: var(--btn-shadow); }
+
+/* compact mode — list fills the window (no hard cap, no cut) */
 .compact .tabs, .compact .add, .compact .filters, .compact .foot { display: none; }
-.compact .list { max-height: 320px; }
 .compact .bar { padding-bottom: 6px; }
 
 /* ============ THEMES ============ */
