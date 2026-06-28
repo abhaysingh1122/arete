@@ -94,15 +94,16 @@ function renderTasks() {
   const hToday = habits.filter(isScheduledToday)
     .slice().sort((a, b) => (habitDone(a, cur) - habitDone(b, cur)));
   hToday.forEach(h => {
-    const done = habitDone(h, cur), c = h.history[cur] || 0;
+    const done = habitDone(h, cur), c = h.history[cur] || 0, stk = streakOf(h);
     const prog = h.timesPerDay > 1 ? `<span class="hcount">${c}/${h.timesPerDay}</span>` : '';
+    const mult = `<span class="hx ${stk ? '' : 'zero'}" title="${stk}-day streak">×${stk}</span>`;
     const row = document.createElement('div');
     row.className = 'task habitTask' + (done ? ' done' : '');
     row.innerHTML = `
       <div class="check">${done ? '✓' : ''}</div>
       <div class="tag htag" title="Daily habit">🔁</div>
       <div class="txt">${esc(h.name)}</div>
-      ${prog}`;
+      ${mult}${prog}`;
     row.querySelector('.check').onclick = () => tickHabit(h);
     row.querySelector('.txt').onclick = () => { setView('habits'); openHabit(h); };
     listEl.appendChild(row);
@@ -215,7 +216,7 @@ function renderHabits() {
       row.innerHTML = `
         <button class="hcheck" ${sched ? '' : 'disabled style="opacity:.35"'}>${done ? '✓' : ''}</button>
         <div class="hmain"><div class="hname">${esc(h.name)}</div><div class="hsub">${sub}</div><div class="hgrid">${cells}</div></div>
-        <div class="hstreak">🔥 ${st}</div>
+        <div class="hstreak" title="${st}-day streak">🔥 ×${st}</div>
         <button class="hedit" title="Edit">✎</button>`;
       if (sched) row.querySelector('.hcheck').onclick = () => tickHabit(h);
       row.querySelector('.hname').onclick = () => openHabit(h);
