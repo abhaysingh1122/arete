@@ -300,7 +300,10 @@ function renderStats() {
     </div>
     <div class="heatHead">Activity · last ${HEAT_WEEKS} weeks</div>
     <div class="heatMonths">${months.map(l => `<span style="width:11px">${l}</span>`).join('')}</div>
-    <div class="heat">${cols.join('')}</div>
+    <div class="heatBody">
+      <div class="heatDays">${DOW.map(d => `<span>${d}</span>`).join('')}</div>
+      <div class="heat">${cols.join('')}</div>
+    </div>
     <div class="heatLegend">Less ${legend} More</div>
     <div class="statNote">📌 ${tasksMonth} tasks done this month · 🏆 best streak ${best} days · ${total} total completions.</div>`;
   if (view === 'stats') $('count').textContent = curStreak;
