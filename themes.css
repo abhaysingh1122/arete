@@ -162,6 +162,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* habit surfaced as a daily task */
 .tag.htag { background: transparent; opacity: .9; font-size: 13px; padding: 2px 2px; cursor: default; }
 .hcount { font-size: 10px; font-weight: 800; color: var(--accent); margin-top: 3px; flex-shrink: 0; }
+/* ×N streak multiplier badge */
+.hx { font-size: 10px; font-weight: 800; color: var(--accent); flex-shrink: 0; white-space: nowrap; opacity: .9; }
+.hx.zero { color: var(--muted); opacity: .55; }
 
 /* habit row extras */
 .hsub { font-size: 9.5px; color: var(--muted); margin: 2px 0 5px; letter-spacing: .3px; }
