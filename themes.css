@@ -150,8 +150,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .statCard .n { font-size: 19px; font-weight: 800; color: var(--text); line-height: 1.1; }
 .statCard .l { font-size: 8.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-top: 3px; }
 .heatHead { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 4px 0 7px; }
-.heatMonths { display: flex; gap: 3px; margin-bottom: 3px; padding-left: 0; height: 12px; }
+.heatMonths { display: flex; gap: 3px; margin-bottom: 3px; padding-left: 16px; height: 12px; }
 .heatMonths span { font-size: 8px; color: var(--muted); }
+.heatBody { display: flex; gap: 4px; }
+.heatDays { display: flex; flex-direction: column; gap: 3px; width: 12px; flex-shrink: 0; }
+.heatDays span { height: 11px; line-height: 11px; font-size: 8px; color: var(--muted); text-align: center; }
 .heat { display: flex; gap: 3px; }
 .heatCol { display: flex; flex-direction: column; gap: 3px; }
 .heatCell { width: 11px; height: 11px; border-radius: 2px; background: var(--surface-strong); }
