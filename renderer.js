@@ -1,3 +1,6 @@
+// ============ core (pure logic shared with the test harness) ============
+const C = window.AreteCore;
+
 // ============ constants ============
 const ACCENTS = ['#6366f1', '#ff4d8d', '#10b981', '#f59e0b', '#22d3ee', '#ef4444', '#a855f7', '#3b82f6', '#14b8a6', '#f43f5e'];
 const TAG = ['⚑', 'LOW', 'MED', 'HIGH'];
@@ -47,19 +50,10 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const $ = (id) => document.getElementById(id);
 function esc(s) { return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-// ============ dates ============
-function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-function dayKey(off) { const d = new Date(); d.setDate(d.getDate() + off); return iso(d); }
-function addDays(key, n) { const d = new Date(key + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d); }
-function dowOf(key) { return new Date(key + 'T12:00:00').getDay(); }
-// the current "logical day" — rolls over at the configured reset time
-function today() {
-  const [rh, rm] = settings.resetTime.split(':').map(Number);
-  const now = new Date();
-  if (now.getHours() * 60 + now.getMinutes() < rh * 60 + rm) return dayKey(-1);
-  return dayKey(0);
-}
-function last7() { const t = today(); return [6, 5, 4, 3, 2, 1, 0].map(n => addDays(t, -n)); }
+// ============ dates (delegated to core.js) ============
+const iso = C.iso, dayKey = C.dayKey, addDays = C.addDays, dowOf = C.dowOf;
+function today() { return C.today(settings.resetTime); }
+function last7() { return C.last7(today()); }
 function dueInfo(due) {
   if (!due) return { cls: 'none', label: '📅' };
   const t = today();
@@ -71,37 +65,24 @@ function dueInfo(due) {
 
 // ============ daily reset ============
 function checkReset() {
-  const cur = today();
-  if (meta.lastResetDay === cur) return;
-  if (meta.lastResetDay) {            // not the very first launch → roll the day
-    tasks = tasks.filter(t => !t.done);   // clear completed; unfinished carry over
-    saveTasks();
-  }
-  meta.lastResetDay = cur;
+  const r = C.computeReset(tasks, meta, today());   // mutates meta.lastResetDay
+  if (!r.changed) return;
+  tasks = r.tasks;
+  if (r.rolled) saveTasks();          // completed cleared on a real day roll-over
   saveMeta();
   renderCurrent();
 }
 
 // ============ habits helpers ============
-function isScheduledToday(h) { return h.days.includes(dowOf(today())); }
-function habitDone(h, key) { return (h.history[key] || 0) >= h.timesPerDay; }
+function isScheduledToday(h) { return C.isScheduled(h, today()); }
+function habitDone(h, key) { return C.habitDone(h, key); }
 function tickHabit(h) {
   const d = today(), c = h.history[d] || 0;
   if (h.timesPerDay <= 1) { if (c) delete h.history[d]; else h.history[d] = 1; }
   else { const n = c >= h.timesPerDay ? 0 : c + 1; if (n === 0) delete h.history[d]; else h.history[d] = n; }
   saveHabits(); renderCurrent();
 }
-function streakOf(h) {
-  let s = 0; const cur = today();
-  for (let i = 0; i < 400; i++) {
-    const key = addDays(cur, -i);
-    if (!h.days.includes(dowOf(key))) continue;     // not scheduled → doesn't count or break
-    if (habitDone(h, key)) s++;
-    else if (key === cur) continue;                 // today not done yet → grace, keep looking back
-    else break;
-  }
-  return s;
-}
+function streakOf(h) { return C.streakOf(h, today()); }
 
 // ============ TASKS ============
 const listEl = $('list'), inputEl = $('input');
@@ -282,18 +263,9 @@ $('heDelete').onclick = () => { if (editingHabit) { habits = habits.filter(x => 
 
 // ============ STATS ============
 const HEAT_WEEKS = 16;
-function activityMap() {
-  const m = {};
-  for (const k in taskLog) m[k] = (m[k] || 0) + taskLog[k];
-  habits.forEach(h => { for (const k in h.history) m[k] = (m[k] || 0) + (h.history[k] || 0); });
-  return m;
-}
-function overallStreak(m) { let s = 0, i = m[today()] ? 0 : 1; for (; ; i++) { if (m[addDays(today(), -i)]) s++; else break; } return s; }
-function bestStreak(m) {
-  const keys = Object.keys(m).filter(k => m[k] > 0).sort(); let best = 0, run = 0, prev = null;
-  keys.forEach(k => { if (prev) { const diff = (new Date(k + 'T00:00') - new Date(prev + 'T00:00')) / 864e5; run = diff === 1 ? run + 1 : 1; } else run = 1; best = Math.max(best, run); prev = k; });
-  return best;
-}
+function activityMap() { return C.activityMap(taskLog, habits); }
+function overallStreak(m) { return C.overallStreak(m, today()); }
+function bestStreak(m) { return C.bestStreak(m); }
 const HEAT_OP = [0.30, 0.55, 0.80, 1];
 function level(c) { return c === 0 ? 0 : c < 3 ? 1 : c < 5 ? 2 : c < 7 ? 3 : 4; }
 function renderStats() {
